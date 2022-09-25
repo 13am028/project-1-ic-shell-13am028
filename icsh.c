@@ -28,11 +28,9 @@ char* parseCommand(char* input) {
 	}
 
 	if (strcmp(arg[0], "exit") == 0) {
-		char* exitCode = arg[1];
-		if (strcmp(exitCode, "1") == 0) {
-			printf("bye\n");
-			exit(1);
-		}
+		char exitCode = atoi(arg[1]);
+		printf("bye\n");
+		exit(exitCode);
 	}
 
 	return copy;
