@@ -36,10 +36,32 @@ char* parseCommand(char* input) {
 	return copy;
 }
 
-int main() {
+void scriptMode(char* filepath) {
+    FILE * fp;
+    char * line = NULL;
+    size_t len = 0;
+    ssize_t read;
+
+    fp = fopen(filepath, "r");
+    if (fp == NULL)
+        exit(EXIT_FAILURE);
+
+    while ((read = getline(&line, &len, fp)) != -1) {
+        parseCommand(line);
+    }
+
+    fclose(fp);
+    if (line)
+        free(line);
+}
+
+int main(int argc, char **argv) {
     char buffer[MAX_CMD_BUFFER];
     char* lastCommand;
     char* repeat = "!!\n";
+    if (argc > 0) {
+    	scriptMode(argv[1]);
+    }
     while (1) {
         printf("icsh $ ");
 	fgets(buffer, 255, stdin);
