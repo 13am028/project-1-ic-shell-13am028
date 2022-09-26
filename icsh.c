@@ -93,7 +93,7 @@ int main(int argc, char **argv) {
 	fgets(buffer, 255, stdin);
         if (strcmp(buffer, repeat) == 0) {
 		printf("%s", lastCommand);
-                parseCommand(lastCommand);
+                parseCommand(strdup(lastCommand));
         } 
 	else {
 		lastCommand = parseCommand(buffer);
