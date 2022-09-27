@@ -9,18 +9,34 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <signal.h>
 
 
 #define MAX_CMD_BUFFER 255
 
+static volatile int keepRunning = 1;
+static int pid;
+
+void stopHandler(int dummy) {
+	printf("%d", pid);
+	if (pid) {
+		kill(pid, SIGSTOP);
+	}
+	return;
+}
+
+void intHandler(int dummy) {
+	return;
+}
 
 int exec_prog(char* args[]) {
-	int pid;
 	if ((pid=fork()) < 0) {
 		perror ("Fork failed");
 		exit(1);
 	}
 	if (!pid) {
+		signal(SIGTSTP, stopHandler);
+		signal(SIGINT, intHandler);
 		execvp(args[0], args);
 	}
 
@@ -28,6 +44,7 @@ int exec_prog(char* args[]) {
 		waitpid (pid, NULL, 0);
 		return 0;
 	}
+	pid = 0;
 	return 1;
 }
 
@@ -85,10 +102,16 @@ int main(int argc, char **argv) {
     char buffer[MAX_CMD_BUFFER];
     char* lastCommand = "";
     char* repeat = "!!\n";
+
     if (argc > 1) {
     	scriptMode(argv[1]);
     }
-    while (1) {
+
+    while (keepRunning) {
+
+	signal(SIGTSTP, stopHandler);
+    	signal(SIGINT, intHandler);
+
         printf("icsh $ ");
 	fgets(buffer, 255, stdin);
 	if (strcmp(buffer, "\n") == 0) {
