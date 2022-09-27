@@ -14,36 +14,50 @@
 
 #define MAX_CMD_BUFFER 255
 
-static volatile int keepRunning = 1;
 static int pid;
+static int sig = 0;
+static int lastExit = 0;
 
-void stopHandler(int dummy) {
-	printf("%d", pid);
+void handlerPID(int signum) {
 	if (pid) {
-		kill(pid, SIGSTOP);
+		if (signum == 2)
+			kill(pid, SIGINT);
+		else if (signum == 20)
+			kill(pid, SIGSTOP);
+		printf("\n");
 	}
-	return;
 }
 
-void intHandler(int dummy) {
-	return;
+void handler(int signum) {
+	sig = 1;
 }
 
 int exec_prog(char* args[]) {
+
+	struct sigaction new_action;
+        sigemptyset(&new_action.sa_mask);
+        new_action.sa_handler = handlerPID;
+        new_action.sa_flags = 0;
+        sigaction(SIGINT, &new_action, NULL);
+	sigaction(SIGTSTP, &new_action, NULL);
+	
+	int status;
+
 	if ((pid=fork()) < 0) {
 		perror ("Fork failed");
 		exit(1);
 	}
 	if (!pid) {
-		signal(SIGTSTP, stopHandler);
-		signal(SIGINT, intHandler);
 		execvp(args[0], args);
 	}
 
       	if (pid) {
-		waitpid (pid, NULL, 0);
+		waitpid (pid, &status, 0);
 		return 0;
 	}
+	if ( WIFEXITED(status) ) {
+        	lastExit = WEXITSTATUS(status);
+    	}
 	pid = 0;
 	return 1;
 }
@@ -61,18 +75,25 @@ char* parseCommand(char* input) {
 	}	
 
 	if (strcmp(arg[0], "echo") == 0) {
-		printf("%s",ori+5);
+		if (strcmp(arg[1], "$?") == 0) {
+			printf("%d\n", lastExit);
+		}
+		else {
+			printf("%s",ori+5);
+		}
+		lastExit = 0;
 	}
 
 	else if (strcmp(arg[0], "exit") == 0) {
 		char exitCode = atoi(arg[1]);
 		printf("bye\n");
 		exit(exitCode);
+		lastExit = 0;
 	}
 
 	else {
 		if (exec_prog(arg) != 0) {
-		       printf("bad command\n");
+			printf("bad command\n");
 		}	       
 	}	
 
@@ -80,52 +101,64 @@ char* parseCommand(char* input) {
 }
 
 void scriptMode(char* filepath) {
-    FILE * fp;
-    char * line = NULL;
-    size_t len = 0;
-    ssize_t read;
+    	FILE * fp;
+    	char * line = NULL;
+    	size_t len = 0;
+    	ssize_t read;
 
-    fp = fopen(filepath, "r");
-    if (fp == NULL)
-        exit(EXIT_FAILURE);
+    	fp = fopen(filepath, "r");
+    	if (fp == NULL)
+        	exit(EXIT_FAILURE);
 
-    while ((read = getline(&line, &len, fp)) != -1) {
-        parseCommand(line);
-    }
+    	while ((read = getline(&line, &len, fp)) != -1) {
+        	parseCommand(line);
+    	}
 
-    fclose(fp);
-    if (line)
-        free(line);
+    	fclose(fp);
+    	if (line)
+        	free(line);
 }
 
 int main(int argc, char **argv) {
-    char buffer[MAX_CMD_BUFFER];
-    char* lastCommand = "";
-    char* repeat = "!!\n";
 
-    if (argc > 1) {
-    	scriptMode(argv[1]);
-    }
+	struct sigaction new_action;
+        sigemptyset(&new_action.sa_mask);
+        new_action.sa_handler = handler;
+        new_action.sa_flags = 0;
 
-    while (keepRunning) {
+	char buffer[MAX_CMD_BUFFER];
+	char* lastCommand = "";
+	char* repeat = "!!\n";
 
-	signal(SIGTSTP, stopHandler);
-    	signal(SIGINT, intHandler);
-
-        printf("icsh $ ");
-	fgets(buffer, 255, stdin);
-	if (strcmp(buffer, "\n") == 0) {
-                continue;
+	if (argc > 1) {
+		scriptMode(argv[1]);	
 	}
-	if (strcmp(buffer, repeat) == 0) {
-		if (strcmp(lastCommand, "") != 0) {
-			printf("%s", lastCommand);
-                	lastCommand = parseCommand(lastCommand);
+
+    	while (1) {
+		sigaction(SIGINT, &new_action, NULL);
+		sigaction(SIGTSTP, &new_action, NULL);
+
+        	printf("icsh $ ");
+		fgets(buffer, 255, stdin);
+
+		if (sig == 1) {
+			sig = 0;
+			printf("\n");
+			continue;
 		}
-	}
-	else {
-		lastCommand = parseCommand(buffer);
-	}
-    }
+
+		if (strcmp(buffer, "\n") == 0) {
+                	continue;
+		}
+		if (strcmp(buffer, repeat) == 0) {
+			if (strcmp(lastCommand, "") != 0) {
+				printf("%s", lastCommand);
+                		lastCommand = parseCommand(lastCommand);
+			}
+		}
+		else {
+			lastCommand = parseCommand(buffer);
+		}
+    	}
 }
 
