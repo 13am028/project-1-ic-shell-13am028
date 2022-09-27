@@ -83,7 +83,7 @@ void scriptMode(char* filepath) {
 
 int main(int argc, char **argv) {
     char buffer[MAX_CMD_BUFFER];
-    char* lastCommand;
+    char* lastCommand = "";
     char* repeat = "!!\n";
     if (argc > 1) {
     	scriptMode(argv[1]);
@@ -91,10 +91,15 @@ int main(int argc, char **argv) {
     while (1) {
         printf("icsh $ ");
 	fgets(buffer, 255, stdin);
-        if (strcmp(buffer, repeat) == 0) {
-		printf("%s", lastCommand);
-                parseCommand(strdup(lastCommand));
-        } 
+	if (strcmp(buffer, "\n") == 0) {
+                continue;
+	}
+	if (strcmp(buffer, repeat) == 0) {
+		if (strcmp(lastCommand, "") != 0) {
+			printf("%s", lastCommand);
+                	lastCommand = parseCommand(lastCommand);
+		}
+	}
 	else {
 		lastCommand = parseCommand(buffer);
 	}
