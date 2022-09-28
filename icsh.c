@@ -17,6 +17,7 @@
 static int pid;
 static int sig = 0;
 static int lastExit = 0;
+static char* lastCommand = "";
 
 void handlerPID(int signum) {
 	if (pid) {
@@ -30,6 +31,7 @@ void handlerPID(int signum) {
 
 void handler(int signum) {
 	sig = 1;
+	return;
 }
 
 int exec_prog(char* args[]) {
@@ -87,8 +89,15 @@ char* parseCommand(char* input) {
 	else if (strcmp(arg[0], "exit") == 0) {
 		char exitCode = atoi(arg[1]);
 		printf("bye\n");
-		exit(exitCode);
 		lastExit = 0;
+		exit(exitCode);
+	}
+
+	else if (strcmp(arg[0], "!!") == 0) {
+		if (strcmp(lastCommand, "") != 0) {
+			printf("%s", lastCommand);
+			lastCommand = parseCommand(lastCommand);
+		}
 	}
 
 	else {
@@ -108,10 +117,10 @@ void scriptMode(char* filepath) {
 
     	fp = fopen(filepath, "r");
     	if (fp == NULL)
-        	exit(EXIT_FAILURE);
+        	printf("file not found\n");
 
     	while ((read = getline(&line, &len, fp)) != -1) {
-        	parseCommand(line);
+        	lastCommand = parseCommand(line);
     	}
 
     	fclose(fp);
@@ -127,7 +136,6 @@ int main(int argc, char **argv) {
         new_action.sa_flags = 0;
 
 	char buffer[MAX_CMD_BUFFER];
-	char* lastCommand = "";
 	char* repeat = "!!\n";
 
 	if (argc > 1) {
@@ -135,6 +143,7 @@ int main(int argc, char **argv) {
 	}
 
     	while (1) {
+
 		sigaction(SIGINT, &new_action, NULL);
 		sigaction(SIGTSTP, &new_action, NULL);
 
@@ -150,11 +159,9 @@ int main(int argc, char **argv) {
 		if (strcmp(buffer, "\n") == 0) {
                 	continue;
 		}
+
 		if (strcmp(buffer, repeat) == 0) {
-			if (strcmp(lastCommand, "") != 0) {
-				printf("%s", lastCommand);
-                		lastCommand = parseCommand(lastCommand);
-			}
+			parseCommand(buffer);
 		}
 		else {
 			lastCommand = parseCommand(buffer);
