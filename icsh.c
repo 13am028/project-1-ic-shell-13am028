@@ -60,6 +60,7 @@ int exec_prog(char* args[]) {
 	if ( WIFEXITED(status) ) {
         	lastExit = WEXITSTATUS(status);
     	}
+	
 	pid = 0;
 	return 1;
 }
@@ -101,10 +102,18 @@ char* parseCommand(char* input) {
 	}
 
 	else {
-		if (exec_prog(arg) != 0) {
+		int bufferLen = 128;
+		char *comm = (char*)malloc(bufferLen * sizeof(char));
+		sprintf(comm, "which %s > /dev/null 2>&1", arg[0]);
+		if (system(comm)) {
 			printf("bad command\n");
-		}	       
-	}	
+		}
+		else {
+			exec_prog(arg);
+		}
+		free(comm);
+	}
+
 
 	return ori;
 }
