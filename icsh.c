@@ -14,35 +14,25 @@
 
 #define MAX_CMD_BUFFER 255
 
-static int pid;
+static pid_t pid;
 static int sig = 0;
 static int lastExit = 0;
 static char* lastCommand = "";
 
-void handlerPID(int signum) {
+void handler(int signum) {
 	if (pid) {
 		if (signum == 2)
 			kill(pid, SIGINT);
 		else if (signum == 20)
-			kill(pid, SIGSTOP);
+			kill(pid, SIGTSTP);
 		printf("\n");
 	}
-}
-
-void handler(int signum) {
-	sig = 1;
-	return;
+	else 
+		sig = 1;
 }
 
 int exec_prog(char* args[]) {
 
-	struct sigaction new_action;
-        sigemptyset(&new_action.sa_mask);
-        new_action.sa_handler = handlerPID;
-        new_action.sa_flags = 0;
-        sigaction(SIGINT, &new_action, NULL);
-	sigaction(SIGTSTP, &new_action, NULL);
-	
 	int status;
 
 	if ((pid=fork()) < 0) {
@@ -50,18 +40,17 @@ int exec_prog(char* args[]) {
 		exit(1);
 	}
 	if (!pid) {
-		execvp(args[0], args);
+		if (execvp(args[0], args) == -1)
+			exit(1);
 	}
-
       	if (pid) {
-		waitpid (pid, &status, 0);
+		lastExit = waitpid (pid, &status, 0);
 		return 0;
 	}
-	if ( WIFEXITED(status) ) {
+	/*if ( WIFEXITED(status) ) {
         	lastExit = WEXITSTATUS(status);
-    	}
+    	}*/
 	
-	pid = 0;
 	return 1;
 }
 
@@ -70,15 +59,15 @@ char* parseCommand(char* input) {
 	input[strlen(input)-1] = '\0';
 
 	char* p = strtok(input, " ");
-	char* arg[4];
+	char* args[4];
 	
-	for (int i=0; i<4; i++) {
-		arg[i] = p;
+	for (int i = 0; i < 4; i++) {
+		args[i] = p;
 		p = strtok(NULL, " ");
 	}	
 
-	if (strcmp(arg[0], "echo") == 0) {
-		if (strcmp(arg[1], "$?") == 0) {
+	if (strcmp(args[0], "echo") == 0) {
+		if (strcmp(args[1], "$?") == 0) {
 			printf("%d\n", lastExit);
 		}
 		else {
@@ -87,14 +76,14 @@ char* parseCommand(char* input) {
 		lastExit = 0;
 	}
 
-	else if (strcmp(arg[0], "exit") == 0) {
-		char exitCode = atoi(arg[1]);
+	else if (strcmp(args[0], "exit") == 0) {
+		char exitCode = atoi(args[1]);
 		printf("bye\n");
 		lastExit = 0;
 		exit(exitCode);
 	}
 
-	else if (strcmp(arg[0], "!!") == 0) {
+	else if (strcmp(args[0], "!!") == 0) {
 		if (strcmp(lastCommand, "") != 0) {
 			printf("%s", lastCommand);
 			lastCommand = parseCommand(lastCommand);
@@ -102,18 +91,10 @@ char* parseCommand(char* input) {
 	}
 
 	else {
-		int bufferLen = 128;
-		char *comm = (char*)malloc(bufferLen * sizeof(char));
-		sprintf(comm, "which %s > /dev/null 2>&1", arg[0]);
-		if (system(comm)) {
+		if (exec_prog(args)) {
 			printf("bad command\n");
 		}
-		else {
-			exec_prog(arg);
-		}
-		free(comm);
 	}
-
 
 	return ori;
 }
@@ -143,7 +124,7 @@ int main(int argc, char **argv) {
         sigemptyset(&new_action.sa_mask);
         new_action.sa_handler = handler;
         new_action.sa_flags = 0;
-
+	
 	char buffer[MAX_CMD_BUFFER];
 	char* repeat = "!!\n";
 
@@ -170,11 +151,13 @@ int main(int argc, char **argv) {
 		}
 
 		if (strcmp(buffer, repeat) == 0) {
-			parseCommand(buffer);
+			parseCommand(lastCommand);
 		}
+
 		else {
 			lastCommand = parseCommand(buffer);
 		}
+		pid = 0;
     	}
 }
 
