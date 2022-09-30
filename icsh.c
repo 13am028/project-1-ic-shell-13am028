@@ -10,6 +10,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <fcntl.h>
 
 
 #define MAX_CMD_BUFFER 255
@@ -40,8 +41,10 @@ int exec_prog(char* args[]) {
 		exit(1);
 	}
 	if (!pid) {
-		if (execvp(args[0], args) == -1)
+		if (execvp(args[0], args) == -1) {
+			printf("bad command\n");
 			exit(1);
+		}
 	}
       	if (pid) {
 		lastExit = waitpid (pid, &status, 0);
@@ -50,6 +53,8 @@ int exec_prog(char* args[]) {
 	/*if ( WIFEXITED(status) ) {
         	lastExit = WEXITSTATUS(status);
     	}*/
+
+	fflush(stdout);
 	
 	return 1;
 }
@@ -60,11 +65,30 @@ char* parseCommand(char* input) {
 
 	char* p = strtok(input, " ");
 	char* args[4];
+	int redirect = 0;
+	char* filename;
 	
 	for (int i = 0; i < 4; i++) {
 		args[i] = p;
 		p = strtok(NULL, " ");
-	}	
+		if (i > 0 && (args[i-1] != NULL) && (strcmp(args[i-1], ">") == 0) && (args[i] != NULL)) {
+			redirect = 1;
+			filename = args[i];
+			args[i-1] = NULL;
+			args[i] = NULL;
+		}
+	}
+	
+	int pfd;
+	int saved;
+
+	if (redirect) {
+		pfd = open("a.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		saved = dup(1);
+		close(1);
+		dup(pfd);
+		close(pfd);
+	}
 
 	if (strcmp(args[0], "echo") == 0) {
 		if (strcmp(args[1], "$?") == 0) {
@@ -91,9 +115,14 @@ char* parseCommand(char* input) {
 	}
 
 	else {
-		if (exec_prog(args)) {
-			printf("bad command\n");
-		}
+		exec_prog(args);
+	}
+
+	if (redirect) {
+		fflush(stdout);
+		// restore stdout back
+		dup2(saved, 1);
+		close(saved);
 	}
 
 	return ori;
@@ -151,7 +180,7 @@ int main(int argc, char **argv) {
 		}
 
 		if (strcmp(buffer, repeat) == 0) {
-			parseCommand(lastCommand);
+			parseCommand(buffer);
 		}
 
 		else {
@@ -160,4 +189,3 @@ int main(int argc, char **argv) {
 		pid = 0;
     	}
 }
-
