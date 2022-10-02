@@ -67,6 +67,7 @@ char* parseCommand(char* input) {
 	char* args[4];
 	int redirect = 0;
 	char* filename;
+	char* echoToFile;
 	
 	for (int i = 0; i < 4; i++) {
 		args[i] = p;
@@ -74,6 +75,7 @@ char* parseCommand(char* input) {
 		if (i > 0 && (args[i-1] != NULL) && (strcmp(args[i-1], ">") == 0) && (args[i] != NULL)) {
 			redirect = 1;
 			filename = args[i];
+			echoToFile = strdup(args[1]);
 			args[i-1] = NULL;
 			args[i] = NULL;
 		}
@@ -83,7 +85,7 @@ char* parseCommand(char* input) {
 	int saved;
 
 	if (redirect) {
-		pfd = open("a.txt", O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		pfd = open(filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
 		saved = dup(1);
 		close(1);
 		dup(pfd);
@@ -93,6 +95,9 @@ char* parseCommand(char* input) {
 	if (strcmp(args[0], "echo") == 0) {
 		if (strcmp(args[1], "$?") == 0) {
 			printf("%d\n", lastExit);
+		}
+		else if (redirect) {
+			printf("%s\n", echoToFile);
 		}
 		else {
 			printf("%s",ori+5);
