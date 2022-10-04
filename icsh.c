@@ -81,12 +81,10 @@ int exec_prog(char* args[], int fg) {
 
 	sigset_t mask_all, mask_one, prev_one;
 
-	//if (!fg) {
-    		sigfillset(&mask_all);
-    		sigemptyset(&mask_one);
-    		sigaddset(&mask_one, SIGCHLD);
-		sigprocmask(SIG_BLOCK, &mask_one, &prev_one);
-	//}
+    	sigfillset(&mask_all);
+    	sigemptyset(&mask_one);
+    	sigaddset(&mask_one, SIGCHLD);
+	sigprocmask(SIG_BLOCK, &mask_one, &prev_one);
 
 	if ((cpid=fork()) < 0) {
 		perror ("Fork failed");
@@ -141,20 +139,41 @@ char* parseCommand(char* input) {
 	int redirect = 0;
 	char* filename;
 	int fg = 1;
+	int write = 0;
+	FILE* fptr;
 	
 	for (int i = 0; i < 4; i++) {
 		args[i] = p;
 		p = strtok(NULL, " ");
+		if (write && args[i] != NULL) {
+			fprintf(fptr, "%s ", args[i]);
+		}
 		if (i > 0 && args[i] != NULL && strcmp(args[i], "&") == 0) {
 			fg = 0;
 			args[i] = NULL;
 		}
+		if (i > 0  && (args[i-1] != NULL) && (strcmp(args[i-1], "<") == 0) && (args[i] != NULL)) {
+				filename = args[0];
+				fptr = fopen(filename, "w");
+				write = 1;
+				char* temp = args[i];
+				args[i-1] = NULL;
+				i = 0;
+				args[i] = temp; 
+				fprintf(fptr, "%s ", args[i]);
+				i++;
+		}		
 		if (i > 0 && (args[i-1] != NULL) && (strcmp(args[i-1], ">") == 0) && (args[i] != NULL)) {
 			redirect = 1;
 			filename = args[i];
 			args[i-1] = NULL;
 			args[i] = NULL;
 		}
+	}
+
+	if (write) {
+		fprintf(fptr, "\n"); 
+		fclose(fptr);
 	}
 	
 	int pfd;
@@ -250,12 +269,6 @@ int main(int argc, char **argv) {
 		sigaction(SIGTTIN, &new_action, NULL);
                 sigaction(SIGTTOU, &new_action, NULL);
 
-		/*pid_t pidd = waitpid(-1, NULL, WNOHANG);
-                if (pidd > 0) {
-                        kill(pidd, SIGKILL);
-                }*/
-
-
         	printf("icsh $ ");
 		fgets(buffer, 255, stdin);
 
@@ -276,11 +289,6 @@ int main(int argc, char **argv) {
 		else {
 			lastCommand = parseCommand(buffer);
 		}
-
-    		pid_t pidd = waitpid(-1, NULL, WNOHANG);
-    		if (pidd > 0) {
-        		kill(pidd, SIGKILL);
-    		}
 
 		pid = 0;
     	}
