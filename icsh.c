@@ -19,40 +19,88 @@ static pid_t pid;
 static int sig = 0;
 static int lastExit = 0;
 static char* lastCommand = "";
+int keeprunning = 1;
+
+void sigchld_handler(int sig)
+{
+    //Reap zombie
+    pid_t pidd = waitpid(-1, NULL, WNOHANG);
+    if (pidd > 0) {
+	kill(pidd, SIGKILL);
+    }
+}
+
 
 void handler(int signum) {
 	if (pid) {
-		if (signum == 2)
+		if (signum == 2) 
 			kill(pid, SIGINT);
-		else if (signum == 20)
+		else if (signum == 20) 
 			kill(pid, SIGTSTP);
-		printf("\n");
+		//printf("\n");
 	}
-	else 
+	else if (signum == SIGCHLD) {
+		sigchld_handler(sig);
+	}
+	else {
 		sig = 1;
+		return;
+	}
+	printf("\n");
 }
 
-int exec_prog(char* args[]) {
+int exec_prog(char* args[], int fg) {
 
 	int status;
+	//pid_t ppid;
+	pid_t ppid = getpid();
+	//sigset_t blocked;
+	//printf("%d", ppid);
+	//
+	/*sigset_t mask_all, mask_one, prev_one;
 
+    	sigfillset(&mask_all);
+    	sigemptyset(&mask_one);
+    	sigaddset(&mask_one, SIGCHLD);
+
+
+	sigprocmask(SIG_BLOCK, &mask_one, &prev_one);*/
 	if ((pid=fork()) < 0) {
 		perror ("Fork failed");
 		exit(1);
 	}
 	if (!pid) {
+		if (!fg) {
+			//sigprocmask(SIG_BLOCK, &mask_all, NULL);
+        		//setpgid(pid, 0);
+			setpgid(0, 0);
+                	tcsetpgrp(0, getpid());
+		}
 		if (execvp(args[0], args) == -1) {
 			printf("bad command\n");
 			exit(1);
 		}
 	}
       	if (pid) {
-		lastExit = waitpid (pid, &status, 0);
-		return 0;
+		if (fg) {
+			waitpid (pid, &status, 0);
+			return 0;
+		}
 	}
-	/*if ( WIFEXITED(status) ) {
-        	lastExit = WEXITSTATUS(status);
-    	}*/
+
+	if (!fg) {
+		setpgid(pid, pid);
+		tcsetpgrp(0, pid);	
+		waitpid(pid, &status, 0);
+		tcsetpgrp(0, ppid);
+	}
+
+	//sigprocmask(SIG_SETMASK, &prev_one, NULL);
+
+	if ( WIFEXITED(status) ) {
+                lastExit = WEXITSTATUS(status);
+        }
+
 
 	fflush(stdout);
 	
@@ -67,15 +115,18 @@ char* parseCommand(char* input) {
 	char* args[4];
 	int redirect = 0;
 	char* filename;
-	char* echoToFile;
+	int fg = 1;
 	
 	for (int i = 0; i < 4; i++) {
 		args[i] = p;
 		p = strtok(NULL, " ");
+		if (i > 0 && args[i] != NULL && strcmp(args[i], "&") == 0) {
+			fg = 0;
+			args[i] = NULL;
+		}
 		if (i > 0 && (args[i-1] != NULL) && (strcmp(args[i-1], ">") == 0) && (args[i] != NULL)) {
 			redirect = 1;
 			filename = args[i];
-			echoToFile = strdup(args[1]);
 			args[i-1] = NULL;
 			args[i] = NULL;
 		}
@@ -96,8 +147,8 @@ char* parseCommand(char* input) {
 		if (strcmp(args[1], "$?") == 0) {
 			printf("%d\n", lastExit);
 		}
-		else if (redirect) {
-			printf("%s\n", echoToFile);
+		else if (redirect || fg == 0) {
+			exec_prog(args, fg);
 		}
 		else {
 			printf("%s",ori+5);
@@ -120,7 +171,7 @@ char* parseCommand(char* input) {
 	}
 
 	else {
-		exec_prog(args);
+		exec_prog(args, fg);
 	}
 
 	if (redirect) {
@@ -158,7 +209,7 @@ int main(int argc, char **argv) {
         sigemptyset(&new_action.sa_mask);
         new_action.sa_handler = handler;
         new_action.sa_flags = 0;
-	
+
 	char buffer[MAX_CMD_BUFFER];
 	char* repeat = "!!\n";
 
@@ -166,10 +217,13 @@ int main(int argc, char **argv) {
 		scriptMode(argv[1]);	
 	}
 
-    	while (1) {
+    	while (keeprunning) {
 
 		sigaction(SIGINT, &new_action, NULL);
 		sigaction(SIGTSTP, &new_action, NULL);
+		sigaction(SIGCHLD, &new_action, NULL);
+		//sigaction(SIGTTIN, &new_action, NULL);
+                //sigaction(SIGTTOU, &new_action, NULL);
 
         	printf("icsh $ ");
 		fgets(buffer, 255, stdin);
@@ -191,6 +245,12 @@ int main(int argc, char **argv) {
 		else {
 			lastCommand = parseCommand(buffer);
 		}
-		pid = 0;
+
+    		pid_t pidd = waitpid(-1, NULL, WNOHANG);
+    		if (pidd > 0) {
+        		kill(pidd, SIGKILL);
+    		}
+
+		//pid = 0;
     	}
 }
