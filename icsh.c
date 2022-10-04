@@ -20,27 +20,41 @@ static int sig = 0;
 static int lastExit = 0;
 static char* lastCommand = "";
 int keeprunning = 1;
+int cjid = 0;
+int jobs[100];
 
-void sigchld_handler(int sig)
+void sigchld_handler(int sig) 
 {
-    //Reap zombie
-    pid_t pidd = waitpid(-1, NULL, WNOHANG);
-    if (pidd > 0) {
-	kill(pidd, SIGKILL);
-    }
+    	sigset_t mask_all, prev_all;
+    	sigfillset(&mask_all);
+
+    	/*Reap zombie */
+    	pid_t pid;
+    	if((pid = waitpid(-1, NULL, WNOHANG)) > 0) {
+        	sigprocmask(SIG_BLOCK, &mask_all, &prev_all);   //Block all signals
+        	//deletejob(jobs, pid);                           //Delete job from jobs array
+        	sigprocmask(SIG_SETMASK, &prev_all, NULL);	//Unblock signals
+		//printf("ffffffff");
+    	}
+
+    return;
 }
 
-
 void handler(int signum) {
-	if (pid) {
+	printf("%d", signum);
+	if (pid && (signum == 2 || signum == 20)) {
 		if (signum == 2) 
 			kill(pid, SIGINT);
 		else if (signum == 20) 
 			kill(pid, SIGTSTP);
-		//printf("\n");
 	}
 	else if (signum == SIGCHLD) {
 		sigchld_handler(sig);
+		sig = 1;
+		return;
+	}
+	else if (signum == SIGTTOU || signum == SIGTTIN) {
+		return;
 	}
 	else {
 		sig = 1;
@@ -49,53 +63,63 @@ void handler(int signum) {
 	printf("\n");
 }
 
+int addjob(pid_t pid) {
+	struct Job {
+		int jid;
+		int pid;
+	} newjob;
+	newjob.jid = ++cjid;
+	newjob.pid = pid;
+	return cjid;
+}
+
 int exec_prog(char* args[], int fg) {
 
 	int status;
-	//pid_t ppid;
-	pid_t ppid = getpid();
-	//sigset_t blocked;
-	//printf("%d", ppid);
-	//
-	/*sigset_t mask_all, mask_one, prev_one;
+	int cpid;
+	pid_t ppid;
 
-    	sigfillset(&mask_all);
-    	sigemptyset(&mask_one);
-    	sigaddset(&mask_one, SIGCHLD);
+	sigset_t mask_all, mask_one, prev_one;
 
+	//if (!fg) {
+    		sigfillset(&mask_all);
+    		sigemptyset(&mask_one);
+    		sigaddset(&mask_one, SIGCHLD);
+		sigprocmask(SIG_BLOCK, &mask_one, &prev_one);
+	//}
 
-	sigprocmask(SIG_BLOCK, &mask_one, &prev_one);*/
-	if ((pid=fork()) < 0) {
+	if ((cpid=fork()) < 0) {
 		perror ("Fork failed");
 		exit(1);
 	}
-	if (!pid) {
+	if (!cpid) {
 		if (!fg) {
-			//sigprocmask(SIG_BLOCK, &mask_all, NULL);
-        		//setpgid(pid, 0);
-			setpgid(0, 0);
-                	tcsetpgrp(0, getpid());
+			sigprocmask(SIG_BLOCK, &mask_all, NULL);
 		}
 		if (execvp(args[0], args) == -1) {
 			printf("bad command\n");
 			exit(1);
 		}
 	}
-      	if (pid) {
+      	if (cpid) {
+		int jid = addjob(cpid);
 		if (fg) {
-			waitpid (pid, &status, 0);
-			return 0;
+                        waitpid (cpid, &status, 0);
+			pid = cpid;
+                }
+		if (!fg) {
+			printf("[%d]\t", jid);
+			for (int i=0; i<4; i++) {
+				if (args[i] == NULL)
+					break;
+				printf("%s ", args[i]);
+			}
+			printf("\n");
 		}
 	}
 
-	if (!fg) {
-		setpgid(pid, pid);
-		tcsetpgrp(0, pid);	
-		waitpid(pid, &status, 0);
-		tcsetpgrp(0, ppid);
-	}
-
-	//sigprocmask(SIG_SETMASK, &prev_one, NULL);
+	if (!fg)
+		sigprocmask(SIG_SETMASK, &prev_one, NULL);
 
 	if ( WIFEXITED(status) ) {
                 lastExit = WEXITSTATUS(status);
@@ -108,6 +132,7 @@ int exec_prog(char* args[], int fg) {
 }
 
 char* parseCommand(char* input) {
+
 	char* ori = strdup(input);
 	input[strlen(input)-1] = '\0';
 
@@ -222,15 +247,21 @@ int main(int argc, char **argv) {
 		sigaction(SIGINT, &new_action, NULL);
 		sigaction(SIGTSTP, &new_action, NULL);
 		sigaction(SIGCHLD, &new_action, NULL);
-		//sigaction(SIGTTIN, &new_action, NULL);
-                //sigaction(SIGTTOU, &new_action, NULL);
+		sigaction(SIGTTIN, &new_action, NULL);
+                sigaction(SIGTTOU, &new_action, NULL);
+
+		/*pid_t pidd = waitpid(-1, NULL, WNOHANG);
+                if (pidd > 0) {
+                        kill(pidd, SIGKILL);
+                }*/
+
 
         	printf("icsh $ ");
 		fgets(buffer, 255, stdin);
 
 		if (sig == 1) {
 			sig = 0;
-			printf("\n");
+			printf("\n"); 
 			continue;
 		}
 
@@ -251,6 +282,6 @@ int main(int argc, char **argv) {
         		kill(pidd, SIGKILL);
     		}
 
-		//pid = 0;
+		pid = 0;
     	}
 }
