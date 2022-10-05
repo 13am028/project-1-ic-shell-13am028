@@ -85,12 +85,15 @@ void sigchld_handler(int sig) {
         	sigprocmask(SIG_BLOCK, &mask_all, &prev_all);   //Block all signals
         	sigprocmask(SIG_SETMASK, &prev_all, NULL);	//Unblock signals
 		Job job = findjob(pid);
-		if (job.jid != 0) {
+		if (job.jid != 0 && pid != rpid) {
+			sig = 2;
 			printf("[%d]+  Done\t\t%s", job.jid, job.command);
 			deletejob(pid);
 		} else 
 			printf("KILLED | STOPPED\n");
     	}
+	//deletejob(rpid);
+	//rpid = 0;
 
     return;
 }
@@ -98,12 +101,14 @@ void sigchld_handler(int sig) {
 void handler(int signum) {
 	//printf("%d", signum);
 	if (rpid && (signum == 2 || signum == 20)) {
-		if (signum == 2) 
+		//printf("%d", rpid);
+		if (signum == 2) {
 			kill(rpid, SIGINT);
-		else if (signum == 20) {
-			kill(rpid, SIGTSTP);
+			deletejob(rpid);
 		}
-		deletejob(rpid);
+		else {
+			kill(rpid, SIGSTOP);
+		}
 	}
 	else if (signum == SIGCHLD) {
 		sigchld_handler(signum);
@@ -181,7 +186,7 @@ void foreground(char* arg) {
 			found = 1;
 			waitpid(pid, NULL, 0);
 			rpid = pid;
-			printf("fg %s",jobs[i].command);
+			printf("fg %d",jobs[i].pid);
 		}
 	}
 	if (!found)
@@ -198,6 +203,7 @@ void background(char* arg) {
         for (int i=0; i<100; i++) {
                 if (jobs[i].pid == pid) {
                         found = 1;
+			kill(pid, SIGCONT);
                         printf("bg %s",jobs[i].command);
                 }
         }
@@ -206,6 +212,17 @@ void background(char* arg) {
 }
 
 char* parseCommand(char* input) {
+
+	struct sigaction new_action;
+        sigemptyset(&new_action.sa_mask);
+        new_action.sa_handler = handler;
+        new_action.sa_flags = 0;
+
+        //sigaction(SIGINT, &new_action, NULL);
+        //sigaction(SIGTSTP, &new_action, NULL);
+        //sigaction(SIGCHLD, &new_action, NULL);
+	//sigaction(SIGTTIN, &new_action, NULL);
+        //sigaction(SIGTTOU, &new_action, NULL);
 
 	char* ori = strdup(input);
 	input[strlen(input)-1] = '\0';
@@ -353,8 +370,8 @@ int main(int argc, char **argv) {
 		sigaction(SIGINT, &new_action, NULL);
 		sigaction(SIGTSTP, &new_action, NULL);
 		sigaction(SIGCHLD, &new_action, NULL);
-		sigaction(SIGTTIN, &new_action, NULL);
-                sigaction(SIGTTOU, &new_action, NULL);
+		//sigaction(SIGTTIN, &new_action, NULL);
+                //sigaction(SIGTTOU, &new_action, NULL);
 
 		if (sig) {
 			if (sig == 1)
@@ -383,8 +400,8 @@ int main(int argc, char **argv) {
 			lastCommand = parseCommand(buffer);
 		}
 
-		if (rpid) 
-			deletejob(rpid);
+		//if (rpid) 
+		//	deletejob(rpid);
 
 		rpid = 0;
     	}
