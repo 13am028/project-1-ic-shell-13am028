@@ -21,7 +21,42 @@ static int lastExit = 0;
 static char* lastCommand = "";
 int keeprunning = 1;
 int cjid = 0;
-int jobs[100];
+int dont = 0;
+typedef struct Job {
+	int jid;
+	pid_t pid;
+	char* command;
+} Job;
+Job jobs[100];
+
+Job findjob(pid_t pid) {
+	for (int i=0; i<100; i++) {
+		if (jobs[i].pid == pid)
+			return jobs[i];
+	}
+	// dummy output, should not get here
+	return jobs[0];
+}
+
+int addjob(pid_t pid, char* command) {
+        Job newjob;
+        newjob.jid = ++cjid;
+        newjob.pid = pid;
+	newjob.command = command;
+        for (int i=0; i<100; i++) {
+                if (jobs[i].pid == 0)
+                        jobs[i] = newjob;
+        }
+        return cjid;
+}
+
+int deletejob(pid_t pid) {
+	for (int i=0; i<100; i++) {
+		if (jobs[i].pid == pid)
+			return 0;
+	}
+	return -1;
+}
 
 void sigchld_handler(int sig) 
 {
@@ -29,19 +64,21 @@ void sigchld_handler(int sig)
     	sigfillset(&mask_all);
 
     	/*Reap zombie */
-    	pid_t pid;
-    	if((pid = waitpid(-1, NULL, WNOHANG)) > 0) {
+    	pid_t pid = waitpid(-1, NULL, WNOHANG);
+    	if (pid > 0) {
         	sigprocmask(SIG_BLOCK, &mask_all, &prev_all);   //Block all signals
-        	//deletejob(jobs, pid);                           //Delete job from jobs array
+        	deletejob(pid);                           //Delete job from jobs array
         	sigprocmask(SIG_SETMASK, &prev_all, NULL);	//Unblock signals
-		//printf("ffffffff");
+		dont = 1;
+		Job job = findjob(pid);
+		printf("[%d]+  Done\t\t%s", job.jid, job.command);
     	}
 
     return;
 }
 
 void handler(int signum) {
-	printf("%d", signum);
+	//printf("%d", signum);
 	if (pid && (signum == 2 || signum == 20)) {
 		if (signum == 2) 
 			kill(pid, SIGINT);
@@ -50,7 +87,7 @@ void handler(int signum) {
 	}
 	else if (signum == SIGCHLD) {
 		sigchld_handler(sig);
-		sig = 1;
+		sig = 2;
 		return;
 	}
 	else if (signum == SIGTTOU || signum == SIGTTIN) {
@@ -63,56 +100,39 @@ void handler(int signum) {
 	printf("\n");
 }
 
-int addjob(pid_t pid) {
-	struct Job {
-		int jid;
-		int pid;
-	} newjob;
-	newjob.jid = ++cjid;
-	newjob.pid = pid;
-	return cjid;
-}
-
-int exec_prog(char* args[], int fg) {
+int exec_prog(char* args[], int fg, char* command) {
 
 	int status;
 	int cpid;
-	pid_t ppid;
 
 	sigset_t mask_all, mask_one, prev_one;
 
     	sigfillset(&mask_all);
     	sigemptyset(&mask_one);
     	sigaddset(&mask_one, SIGCHLD);
-	sigprocmask(SIG_BLOCK, &mask_one, &prev_one);
+	if (!fg)
+		sigprocmask(SIG_BLOCK, &mask_one, &prev_one);
 
 	if ((cpid=fork()) < 0) {
 		perror ("Fork failed");
 		exit(1);
 	}
 	if (!cpid) {
-		if (!fg) {
-			sigprocmask(SIG_BLOCK, &mask_all, NULL);
-		}
 		if (execvp(args[0], args) == -1) {
 			printf("bad command\n");
 			exit(1);
 		}
 	}
       	if (cpid) {
-		int jid = addjob(cpid);
+		int jid = addjob(cpid, command);
 		if (fg) {
                         waitpid (cpid, &status, 0);
 			pid = cpid;
                 }
 		if (!fg) {
-			printf("[%d]\t", jid);
-			for (int i=0; i<4; i++) {
-				if (args[i] == NULL)
-					break;
-				printf("%s ", args[i]);
-			}
-			printf("\n");
+			sigprocmask(SIG_BLOCK, &mask_all, NULL);
+        		setpgid(pid, 0);
+			printf("[%d] %d\n", jid, cpid);
 		}
 	}
 
@@ -124,7 +144,7 @@ int exec_prog(char* args[], int fg) {
         }
 
 
-	fflush(stdout);
+	//fflush(stdout);
 	
 	return 1;
 }
@@ -192,7 +212,7 @@ char* parseCommand(char* input) {
 			printf("%d\n", lastExit);
 		}
 		else if (redirect || fg == 0) {
-			exec_prog(args, fg);
+			exec_prog(args, fg, strdup(ori));
 		}
 		else {
 			printf("%s",ori+5);
@@ -215,7 +235,7 @@ char* parseCommand(char* input) {
 	}
 
 	else {
-		exec_prog(args, fg);
+		exec_prog(args, fg, strdup(ori));
 	}
 
 	if (redirect) {
@@ -269,17 +289,21 @@ int main(int argc, char **argv) {
 		sigaction(SIGTTIN, &new_action, NULL);
                 sigaction(SIGTTOU, &new_action, NULL);
 
-        	printf("icsh $ ");
-		fgets(buffer, 255, stdin);
-
-		if (sig == 1) {
+		if (sig) {
+			if (sig == 1)
+				printf("\n");
 			sig = 0;
-			printf("\n"); 
+			memset(buffer, 0, 255);
 			continue;
 		}
 
-		if (strcmp(buffer, "\n") == 0) {
-                	continue;
+		printf("icsh $ ");
+		//memset(buffer, 0, 255);
+		fgets(buffer, 255, stdin);
+
+		if (strcmp(buffer, "\n") == 0 || dont) {
+                	dont = 0;
+			continue;
 		}
 
 		if (strcmp(buffer, repeat) == 0) {
