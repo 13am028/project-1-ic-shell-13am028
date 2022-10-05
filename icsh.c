@@ -21,10 +21,10 @@ static int lastExit = 0;
 static char* lastCommand = "";
 int keeprunning = 1;
 int cjid = 0;
-int dont = 0;
 typedef struct Job {
 	int jid;
 	pid_t pid;
+	char* status;
 	char* command;
 } Job;
 Job jobs[100];
@@ -42,6 +42,7 @@ int addjob(pid_t pid, char* command) {
         Job newjob;
         newjob.jid = ++cjid;
         newjob.pid = pid;
+	newjob.status = "Running";
 	newjob.command = command;
         for (int i=0; i<100; i++) {
                 if (jobs[i].pid == 0) {
@@ -66,9 +67,9 @@ void printjob() {
 	for (int i=0; i<100; i++) {
 		if (jobs[i].pid != 0) {
 			if (jobs[i].jid == cjid)
-				printf("[%d]  \t\t%s", jobs[i].jid, jobs[i].command);
+				printf("[%d]  %s\t\t%s", jobs[i].jid, jobs[i].status, jobs[i].command);
 			else 
-				printf("[%d]  \t\t%s", jobs[i].jid, jobs[i].command);
+				printf("[%d]  %s\t\t%s", jobs[i].jid, jobs[i].status, jobs[i].command);
 		}
 	}
 }
@@ -83,7 +84,6 @@ void sigchld_handler(int sig) {
     	if (pid > 0) {
         	sigprocmask(SIG_BLOCK, &mask_all, &prev_all);   //Block all signals
         	sigprocmask(SIG_SETMASK, &prev_all, NULL);	//Unblock signals
-		dont = 1;
 		Job job = findjob(pid);
 		if (job.jid != 0) {
 			printf("[%d]+  Done\t\t%s", job.jid, job.command);
@@ -103,6 +103,7 @@ void handler(int signum) {
 		else if (signum == 20) {
 			kill(rpid, SIGTSTP);
 		}
+		deletejob(rpid);
 	}
 	else if (signum == SIGCHLD) {
 		sigchld_handler(signum);
@@ -178,6 +179,8 @@ void foreground(char* arg) {
 	for (int i=0; i<100; i++) {
 		if (jobs[i].pid == pid) {
 			found = 1;
+			waitpid(pid, NULL, 0);
+			rpid = pid;
 			printf("fg %s",jobs[i].command);
 		}
 	}
@@ -362,11 +365,13 @@ int main(int argc, char **argv) {
 		}
 
 		printf("icsh $ ");
-		//memset(buffer, 0, 255);
 		fgets(buffer, 255, stdin);
 
-		if (strcmp(buffer, "\n") == 0 || dont) {
-                	dont = 0;
+
+		if (sig)
+			continue;
+
+		if (strcmp(buffer, "\n") == 0) {
 			continue;
 		}
 
