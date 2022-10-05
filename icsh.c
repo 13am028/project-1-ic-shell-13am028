@@ -15,7 +15,7 @@
 
 #define MAX_CMD_BUFFER 255
 
-static pid_t pid;
+static pid_t rpid;
 static int sig = 0;
 static int lastExit = 0;
 static char* lastCommand = "";
@@ -44,22 +44,37 @@ int addjob(pid_t pid, char* command) {
         newjob.pid = pid;
 	newjob.command = command;
         for (int i=0; i<100; i++) {
-                if (jobs[i].pid == 0)
+                if (jobs[i].pid == 0) {
                         jobs[i] = newjob;
+			break;
+		}
         }
         return cjid;
 }
 
 int deletejob(pid_t pid) {
 	for (int i=0; i<100; i++) {
-		if (jobs[i].pid == pid)
+		if (jobs[i].pid == pid) {
+			jobs[i].pid = 0;
 			return 0;
+		}
 	}
 	return -1;
 }
 
-void sigchld_handler(int sig) 
-{
+void printjob() {
+	for (int i=0; i<100; i++) {
+		if (jobs[i].pid != 0) {
+			if (jobs[i].jid == cjid)
+				printf("[%d]  \t\t%s", jobs[i].jid, jobs[i].command);
+			else 
+				printf("[%d]  \t\t%s", jobs[i].jid, jobs[i].command);
+		}
+	}
+}
+
+void sigchld_handler(int sig) {
+
     	sigset_t mask_all, prev_all;
     	sigfillset(&mask_all);
 
@@ -67,11 +82,14 @@ void sigchld_handler(int sig)
     	pid_t pid = waitpid(-1, NULL, WNOHANG);
     	if (pid > 0) {
         	sigprocmask(SIG_BLOCK, &mask_all, &prev_all);   //Block all signals
-        	deletejob(pid);                           //Delete job from jobs array
         	sigprocmask(SIG_SETMASK, &prev_all, NULL);	//Unblock signals
 		dont = 1;
 		Job job = findjob(pid);
-		printf("[%d]+  Done\t\t%s", job.jid, job.command);
+		if (job.jid != 0) {
+			printf("[%d]+  Done\t\t%s", job.jid, job.command);
+			deletejob(pid);
+		} else 
+			printf("KILLED | STOPPED\n");
     	}
 
     return;
@@ -79,14 +97,15 @@ void sigchld_handler(int sig)
 
 void handler(int signum) {
 	//printf("%d", signum);
-	if (pid && (signum == 2 || signum == 20)) {
+	if (rpid && (signum == 2 || signum == 20)) {
 		if (signum == 2) 
-			kill(pid, SIGINT);
-		else if (signum == 20) 
-			kill(pid, SIGTSTP);
+			kill(rpid, SIGINT);
+		else if (signum == 20) {
+			kill(rpid, SIGTSTP);
+		}
 	}
 	else if (signum == SIGCHLD) {
-		sigchld_handler(sig);
+		sigchld_handler(signum);
 		sig = 2;
 		return;
 	}
@@ -127,11 +146,11 @@ int exec_prog(char* args[], int fg, char* command) {
 		int jid = addjob(cpid, command);
 		if (fg) {
                         waitpid (cpid, &status, 0);
-			pid = cpid;
+			rpid = cpid;
                 }
 		if (!fg) {
 			sigprocmask(SIG_BLOCK, &mask_all, NULL);
-        		setpgid(pid, 0);
+        		setpgid(cpid, 0);
 			printf("[%d] %d\n", jid, cpid);
 		}
 	}
@@ -144,9 +163,43 @@ int exec_prog(char* args[], int fg, char* command) {
         }
 
 
-	//fflush(stdout);
+	fflush(stdout);
 	
 	return 1;
+}
+
+void foreground(char* arg) {
+	if (arg == NULL) {
+		printf("Job not found\n");
+		return;
+	}
+	pid_t pid = (pid_t) atoi(arg);
+	int found = 0;
+	for (int i=0; i<100; i++) {
+		if (jobs[i].pid == pid) {
+			found = 1;
+			printf("fg %s",jobs[i].command);
+		}
+	}
+	if (!found)
+		printf("Job not found\n");
+}
+
+void background(char* arg) {
+        if (arg == NULL) {
+                printf("Job not found\n");
+                return;
+        }
+        pid_t pid = (pid_t) atoi(arg);
+        int found = 0;
+        for (int i=0; i<100; i++) {
+                if (jobs[i].pid == pid) {
+                        found = 1;
+                        printf("bg %s",jobs[i].command);
+                }
+        }
+        if (!found)
+                printf("Job not found\n");
 }
 
 char* parseCommand(char* input) {
@@ -233,6 +286,17 @@ char* parseCommand(char* input) {
 			lastCommand = parseCommand(lastCommand);
 		}
 	}
+	else if (strcmp(args[0], "jobs") == 0) {
+		printjob();
+	}
+
+	else if (strcmp(args[0], "fg") == 0) {
+		foreground(args[1]);
+	}
+
+	else if (strcmp(args[0], "bg") == 0) {
+		background(args[1]);
+	}
 
 	else {
 		exec_prog(args, fg, strdup(ori));
@@ -314,6 +378,9 @@ int main(int argc, char **argv) {
 			lastCommand = parseCommand(buffer);
 		}
 
-		pid = 0;
+		if (rpid) 
+			deletejob(rpid);
+
+		rpid = 0;
     	}
 }
