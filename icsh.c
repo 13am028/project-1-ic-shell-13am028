@@ -400,8 +400,8 @@ int main(int argc, char **argv) {
 			lastCommand = parseCommand(buffer);
 		}
 
-		//if (rpid) 
-		//	deletejob(rpid);
+		if (waitpid(rpid, NULL, WNOHANG) < 0) 
+			deletejob(rpid);
 
 		rpid = 0;
     	}
