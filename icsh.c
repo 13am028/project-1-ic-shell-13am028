@@ -86,7 +86,6 @@ void sigchld_handler(int sig) {
         	sigprocmask(SIG_SETMASK, &prev_all, NULL);	//Unblock signals
 		Job job = findjob(pid);
 		if (job.jid != 0 && pid != rpid) {
-			sig = 2;
 			printf("[%d]+  Done\t\t%s", job.jid, job.command);
 			deletejob(pid);
 		} else 
@@ -151,8 +150,8 @@ int exec_prog(char* args[], int fg, char* command) {
       	if (cpid) {
 		int jid = addjob(cpid, command);
 		if (fg) {
-                        waitpid (cpid, &status, 0);
 			rpid = cpid;
+                        waitpid (cpid, &status, 0);
                 }
 		if (!fg) {
 			sigprocmask(SIG_BLOCK, &mask_all, NULL);
@@ -179,14 +178,14 @@ void foreground(char* arg) {
 		printf("Job not found\n");
 		return;
 	}
-	pid_t pid = (pid_t) atoi(arg);
+	int jid = atoi(arg+1);
 	int found = 0;
 	for (int i=0; i<100; i++) {
-		if (jobs[i].pid == pid) {
+		if (jobs[i].jid == jid) {
 			found = 1;
-			waitpid(pid, NULL, 0);
-			rpid = pid;
-			printf("fg %d",jobs[i].pid);
+			rpid = jobs[i].pid;
+			waitpid(jobs[i].pid, NULL, 0);
+			//printf("fg %d",jobs[i].pid);
 		}
 	}
 	if (!found)
@@ -198,13 +197,13 @@ void background(char* arg) {
                 printf("Job not found\n");
                 return;
         }
-        pid_t pid = (pid_t) atoi(arg);
+        int jid = atoi(arg+1);
         int found = 0;
         for (int i=0; i<100; i++) {
-                if (jobs[i].pid == pid) {
+                if (jobs[i].jid == jid) {
                         found = 1;
-			kill(pid, SIGCONT);
-                        printf("bg %s",jobs[i].command);
+			kill(jobs[i].pid, SIGCONT);
+                        //printf("bg %s",jobs[i].command);
                 }
         }
         if (!found)
@@ -212,17 +211,6 @@ void background(char* arg) {
 }
 
 char* parseCommand(char* input) {
-
-	struct sigaction new_action;
-        sigemptyset(&new_action.sa_mask);
-        new_action.sa_handler = handler;
-        new_action.sa_flags = 0;
-
-        //sigaction(SIGINT, &new_action, NULL);
-        //sigaction(SIGTSTP, &new_action, NULL);
-        //sigaction(SIGCHLD, &new_action, NULL);
-	//sigaction(SIGTTIN, &new_action, NULL);
-        //sigaction(SIGTTOU, &new_action, NULL);
 
 	char* ori = strdup(input);
 	input[strlen(input)-1] = '\0';
@@ -370,8 +358,8 @@ int main(int argc, char **argv) {
 		sigaction(SIGINT, &new_action, NULL);
 		sigaction(SIGTSTP, &new_action, NULL);
 		sigaction(SIGCHLD, &new_action, NULL);
-		//sigaction(SIGTTIN, &new_action, NULL);
-                //sigaction(SIGTTOU, &new_action, NULL);
+		sigaction(SIGTTIN, &new_action, NULL);
+                sigaction(SIGTTOU, &new_action, NULL);
 
 		if (sig) {
 			if (sig == 1)
