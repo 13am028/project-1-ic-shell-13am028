@@ -251,7 +251,11 @@ char* parseCommand(char* input) {
 		}
 		if (i > 0  && (args[i-1] != NULL) && (strcmp(args[i-1], "<") == 0) && (args[i] != NULL)) {
 				filename = args[0];
-				fptr = fopen(filename, "w");
+				fptr = fopen(filename, "r");
+				if (!fptr) {
+					printf("File does not exist\n");
+					return ori;
+				}
 				write = 1;
 				char* temp = args[i];
 				args[i-1] = NULL;
