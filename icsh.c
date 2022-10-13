@@ -19,7 +19,6 @@ static pid_t rpid;
 static int sig = 0;
 static int lastExit = 0;
 static char* lastCommand = "";
-int keeprunning = 1;
 int cjid = 0;
 typedef struct Job {
 	int jid;
@@ -67,9 +66,9 @@ void printjob() {
 	for (int i=0; i<100; i++) {
 		if (jobs[i].pid != 0) {
 			if (jobs[i].jid == cjid)
-				printf("[%d]  %s\t\t%s", jobs[i].jid, jobs[i].status, jobs[i].command);
+				printf("[%d]+  %s\t\t%s", jobs[i].jid, jobs[i].status, jobs[i].command);
 			else 
-				printf("[%d]  %s\t\t%s", jobs[i].jid, jobs[i].status, jobs[i].command);
+				printf("[%d]-  %s\t\t%s", jobs[i].jid, jobs[i].status, jobs[i].command);
 		}
 	}
 }
@@ -86,10 +85,12 @@ void sigchld_handler(int sig) {
         	sigprocmask(SIG_SETMASK, &prev_all, NULL);	//Unblock signals
 		Job job = findjob(pid);
 		if (job.jid != 0 && pid != rpid) {
-			printf("[%d]+  Done\t\t%s", job.jid, job.command);
+			printf("\n[%d]+  Done\t\t%s", job.jid, job.command);
+			printf("icsh $ ");
 			deletejob(pid);
-		} else 
-			printf("KILLED | STOPPED\n");
+		}
+		//} else 
+		//	printf("KILLED | STOPPED\n");
     	}
 	//deletejob(rpid);
 	//rpid = 0;
@@ -353,7 +354,7 @@ int main(int argc, char **argv) {
 		scriptMode(argv[1]);	
 	}
 
-    	while (keeprunning) {
+    	while (1) {
 
 		sigaction(SIGINT, &new_action, NULL);
 		sigaction(SIGTSTP, &new_action, NULL);
@@ -365,16 +366,22 @@ int main(int argc, char **argv) {
 			if (sig == 1)
 				printf("\n");
 			sig = 0;
-			memset(buffer, 0, 255);
 			continue;
 		}
 
-		printf("icsh $ ");
+		if (sig == 0)
+			printf("icsh $ ");
 		fgets(buffer, 255, stdin);
 
 
-		if (sig)
-			continue;
+		if (sig) {
+			if (sig == 1) 
+				continue;
+			if (sig == 2) {
+				fgets(buffer, 255, stdin);
+				sig = 0;
+			}
+		}
 
 		if (strcmp(buffer, "\n") == 0) {
 			continue;
@@ -384,13 +391,13 @@ int main(int argc, char **argv) {
 			parseCommand(buffer);
 		}
 
-		else {
+		else if (sig == 0) {
 			lastCommand = parseCommand(buffer);
 		}
 
-		if (waitpid(rpid, NULL, WNOHANG) < 0) 
+		if (waitpid(rpid, NULL, WNOHANG) < 0) {
 			deletejob(rpid);
-
-		rpid = 0;
+			rpid = 0;
+		}
     	}
 }
