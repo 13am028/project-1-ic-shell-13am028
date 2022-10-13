@@ -57,7 +57,7 @@ int addjob(pid_t pid, char* command) {
 int deletejob(pid_t pid) {
 	for (int i=0; i<100; i++) {
 		if (jobs[i].pid == pid) {
-			jobs[i].pid = -1;
+			jobs[i].pid = 0;
 			return 0;
 		}
 	}
@@ -65,7 +65,7 @@ int deletejob(pid_t pid) {
 }
 
 void printjob() {
-	for (int i=0; i<100; i++) {
+	for (int i=1; i<100; i++) {
 		if (jobs[i].pid != 0) {
 			if (jobs[i].jid == cjid)
 				printf("[%d]+  %s\t\t%s", jobs[i].jid, jobs[i].status, jobs[i].command);
