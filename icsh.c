@@ -25,6 +25,7 @@ typedef struct Job {
 	pid_t pid;
 	char* status;
 	char* command;
+	int bg;
 } Job;
 Job jobs[100];
 
@@ -43,6 +44,7 @@ int addjob(pid_t pid, char* command) {
         newjob.pid = pid;
 	newjob.status = "Running";
 	newjob.command = command;
+	newjob.bg = 0;
         for (int i=0; i<100; i++) {
                 if (jobs[i].pid == 0) {
                         jobs[i] = newjob;
@@ -55,7 +57,7 @@ int addjob(pid_t pid, char* command) {
 int deletejob(pid_t pid) {
 	for (int i=0; i<100; i++) {
 		if (jobs[i].pid == pid) {
-			jobs[i].pid = 0;
+			jobs[i].pid = -1;
 			return 0;
 		}
 	}
@@ -86,7 +88,8 @@ void sigchld_handler(int sig) {
 		Job job = findjob(pid);
 		if (job.jid != 0 && pid != rpid) {
 			printf("\n[%d]+  Done\t\t%s", job.jid, job.command);
-			printf("icsh $ ");
+			if (!job.bg)
+				printf("icsh $ ");
 			deletejob(pid);
 		}
 		//} else 
@@ -107,6 +110,10 @@ void handler(int signum) {
 			deletejob(rpid);
 		}
 		else {
+			for (int i=0; i<100; i++) {
+				if (rpid == jobs[i].pid)
+					jobs[i].status = "Stopped";
+			}
 			kill(rpid, SIGSTOP);
 		}
 	}
@@ -118,6 +125,9 @@ void handler(int signum) {
 	else if (signum == SIGTTOU || signum == SIGTTIN) {
 		return;
 	}
+	else if (signum == SIGCONT) {
+		return;
+	}
 	else {
 		sig = 1;
 		return;
@@ -126,6 +136,9 @@ void handler(int signum) {
 }
 
 int exec_prog(char* args[], int fg, char* command) {
+
+	if (strcmp(args[0], "b") == 0)
+		return 0;
 
 	int status;
 	int cpid;
@@ -203,6 +216,8 @@ void background(char* arg) {
         for (int i=0; i<100; i++) {
                 if (jobs[i].jid == jid) {
                         found = 1;
+			jobs[i].bg = 1;
+			rpid = 0;
 			kill(jobs[i].pid, SIGCONT);
                         //printf("bg %s",jobs[i].command);
                 }
@@ -354,6 +369,8 @@ int main(int argc, char **argv) {
 		scriptMode(argv[1]);	
 	}
 
+	jobs[0].pid = -1;
+
     	while (1) {
 
 		sigaction(SIGINT, &new_action, NULL);
@@ -399,5 +416,6 @@ int main(int argc, char **argv) {
 			deletejob(rpid);
 			rpid = 0;
 		}
+;
     	}
 }
